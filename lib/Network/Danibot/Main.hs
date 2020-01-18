@@ -25,7 +25,7 @@ import System.Environment (lookupEnv)
 import System.IO
 
 import Network.Danibot.Slack 
-import Network.Danibot.Slack.Types (introUrl,introChat)
+import Network.Danibot.Slack.Types (introUrl,introChat, UserMessage)
 import Network.Danibot.Slack.API (startRTM)
 import Network.Danibot.Slack.RTM (fromWSSURI,loopRTM)
 
@@ -48,7 +48,7 @@ readJSON path = do
         Right dict -> pure dict
         Left  err  -> throwIO (userError err)
 
-exceptMain :: IO (Either String (Text -> IO Text)) -> ExceptT String IO ()
+exceptMain :: IO (Either String (Text -> UserMessage -> IO Text)) -> ExceptT String IO ()
 exceptMain handlerio = do
     slack_api_token <- ExceptT (fmap (maybe (Left slack_api_token_env_var_missing) 
                                             (Right . fromString))
@@ -68,7 +68,7 @@ exceptMain handlerio = do
     handler for incoming messages.		
 
 -}
-mainWith :: IO (Either String (Text -> IO Text)) -> IO ()
+mainWith :: IO (Either String (Text -> UserMessage -> IO Text)) -> IO ()
 mainWith handlerio = do
     final <- runExceptT (exceptMain handlerio)
     case final of

@@ -29,20 +29,20 @@ import Network.Danibot.Slack.Types
     channel and forks a thread for each request.	
 
 -}
-worker :: (Text -> IO Text) -- ^ A request handler function.
-       -> IO (TChan (Text,Text -> IO ()), IO ()) -- ^ Action that creates the request channel and worker action.
+worker :: (Text -> UserMessage -> IO Text) -- ^ A request handler function.
+       -> IO (TChan (Text,UserMessage,Text -> IO ()), IO ()) -- ^ Action that creates the request channel and worker action.
 worker handler = do
     chan <- atomically newTChan  
-    let go = forever (do (task,post) <- atomically (readTChan chan)
+    let go = forever (do (task, userMessage,post) <- atomically (readTChan chan)
                          forkIO (do
-                             result <- handler task
+                             result <- handler task userMessage
                              post result))
     pure (chan,go)                            
 
 {-| Builds a Fold that consumes messages coming from the Slack RTM connection.		
 
 -}
-eventFold :: TChan (Text,Text -> IO ()) 
+eventFold :: TChan (Text,UserMessage,Text -> IO ()) 
           -> ChatState
           -> FoldM IO Event ()
 eventFold pool cs =
@@ -54,7 +54,7 @@ eventFold pool cs =
                 pure NormalState
             (InitialState,_) -> 
                 throwIO (userError "wrong start")
-            (NormalState,MessageEvent (Message _ (Right (UserMessage channel_ user_ text_ NotMe)))) -> do
+            (NormalState,MessageEvent (Message _ (Right userMessage@(UserMessage channel_ user_ text_ NotMe)))) -> do
                 currentcs <- atomically (readTVar (chatVar cs)) 
                 let whoami = identity (self currentcs) 
                     send = sendMessageToChannel cs channel_
@@ -63,16 +63,16 @@ eventFold pool cs =
                     case isDirectedTo text_ of
                         Just (target,text') | user_ /= whoami && target == whoami -> do
                             atomically (writeTChan pool 
-                                                   (text',send))
+                                                   (text',userMessage, send))
                         Nothing             | user_ /= whoami -> do
                             atomically (writeTChan pool 
-                                                   (text_,send))
+                                                   (text_,userMessage,send))
                         _ -> pure ()
                   else -- message in general channel? 
                     case isDirectedTo text_ of
                         Just (target,text') | user_ /= whoami && target == whoami -> do
                             atomically (writeTChan pool 
-                                                   (text',send . addressTo user_))
+                                                   (text',userMessage, send . addressTo user_))
                         _ -> pure ()
                 pure NormalState
             _ -> do
